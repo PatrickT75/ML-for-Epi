@@ -1,0 +1,106 @@
+---
+title: "HW 5"
+output: html_document
+date: "2023-02-14"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse) 
+library(caret)
+library(glmnet)
+library(klaR)
+```
+
+__Load and Split Data__
+```{r load_data}
+set.seed(123)
+df <- read.csv("alcohol_use.csv")
+df <- df[2:9]
+df <- na.omit(df)
+df$alc_consumption <- as.factor(df$alc_consumption)
+head(df)
+```
+
+```{r split_data}
+train.indices<-createDataPartition(y=df$alc_consumption,p=0.7,list=FALSE)
+train.data<-df[train.indices, ]
+test.data<-df[-train.indices, ]
+```
+
+__ElasticNet__
+```{r ElasticNet}
+set.seed(123)
+en.model<- train(
+  alc_consumption ~., data = train.data, method = "glmnet",
+  trControl = trainControl("cv", number = 10), preProc=c("center", "scale"),
+ tuneLength=10
+  )
+
+print(en.model$bestTune)
+```
+For the ElasticNet model, I will use alpha = 0.7 and lambda = 0.258, since these were the hyperparameters found to be the best by tuning.
+
+```{r ElasticNet_predict}
+en.pred <- en.model %>% predict(test.data)
+
+confusionMatrix(en.pred, test.data$alc_consumption, positive="CurrentUse")
+```
+
+
+__Logistic Regression__
+```{r Logistic}
+log.model <- train(
+  alc_consumption ~., data = train.data, method = "glm", family="binomial",
+  trControl = trainControl("cv", number = 10), preProc=c("center", "scale"),
+ tuneLength=10
+  )
+```
+For the logistic regression, there are no hyperparameters to tune.
+
+```{r Logistic_predict}
+log.pred <- log.model %>% predict(test.data)
+
+confusionMatrix(log.pred, test.data$alc_consumption, positive="CurrentUse")
+```
+
+
+__LASSO__
+```{r Lasso}
+lambda<-10^seq(-3,3, length=100)
+
+lasso.model<- train(
+  alc_consumption ~., data = train.data, method = "glmnet",
+  trControl = trainControl("cv", number = 10), preProc=c("center", "scale"), tuneGrid=expand.grid(alpha=1, lambda=lambda)
+  )
+
+lasso.model$bestTune
+```
+Here, the cross-validation gives me an optimal lambda = 0.231. 
+
+```{r Lasso_predict}
+lasso.pred <- lasso.model %>% predict(test.data)
+
+confusionMatrix(lasso.pred, test.data$alc_consumption, positive="CurrentUse")
+
+```
+
+__Final Evaluation__
+
+Although the ElasticNet and Lasso have perfect sensitivity, it does quite poorly for identifying negatives. Overall, the model that has the best balance for sensitivity and specificity is the logistic regression model, so I will choose that one as the final model. The metrics are:
+
+Accuracy: 0.8124
+
+Sensitivity: 0.8239
+
+Specificity: 0.7992
+
+PPV: 0.8239
+
+NPV: 0.7992
+
+
+__Question 5__
+
+I think this analysis can help us to get closer to the answer of whether we can identify and prevent people from drinking alcohol at an early age, especially since it is linked to chronic alcohol abuse. This analysis helps us indirectly progress towards answering that question, because we are asking whether psychological traits can predict alcohol use. Here, we show that it is somewhat possible to use these traits to predict alcohol use using three different models. Therefore, we can have a better understanding of how to screen young people for alcohol use using their psychological metrics.
