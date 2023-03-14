@@ -1,0 +1,96 @@
+---
+title: "HW 4"
+output: html_document
+date: "2023-02-07"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Question 1
+
+__Clean the data:__
+
+```{r clean_data}
+set.seed(123)
+df <- read.csv("class4_p1.csv")
+df <- na.omit(df)
+categorical_index <- c(2,3,4,6,7,12,13,14,15)
+
+for (i in 1:length(categorical_index)) {
+  df[,categorical_index[i]] <- factor(df[,categorical_index[i]])
+}
+
+df <- df[,2:ncol(df)]
+head(df)
+```
+
+__Partition data:__
+```{r partition_data, message=FALSE}
+library(caret)
+train.index<-createDataPartition(df$chronic1, p=0.7, list=FALSE)
+training_set <- df[train.index,]
+testing_set <- df[-train.index,]
+```
+
+Model 1 uses the features: tobacco1, alcohol1, habits5, habits7, gpaq11days, and gpaq8totmin. These describe lifestyle factors.
+
+```{r model_1}
+model_1 <- glm(healthydays ~ tobacco1+alcohol1+habits5+habits7+gpaq11days+gpaq8totmin, family = "gaussian", data = df)
+
+
+prediction_1 <- predict(model_1, testing_set)
+
+RMSE(prediction_1, testing_set$healthydays)
+```
+Model 2 includes the features chronic1, chronic3, chronic4, and age group. These are nonreversible features.
+
+```{r model_2}
+model_2 <- glm(healthydays ~ chronic1+chronic3+chronic4+agegroup, family = "gaussian", data = df)
+
+prediction_2 <- predict(object=model_2, newdata=testing_set)
+
+RMSE(prediction_2, testing_set$healthydays)
+```
+
+Here the RMSE is slightly smaller for Model 2 (7.70 healthy days) compared to Model 1 (7.79 healthy days). Thus, Model 2 would be the preferred prediction model.
+
+This model will be useful in a clinical setting, since these data are likely recorded for each patient. It would be easier to get these data from clinical visits compared to self-reported questions regarding lifestyle.
+
+
+## Question 2
+
+```{r optimal_clusters, message=FALSE}
+library(cluster)
+library(factoextra)
+gap_stat <- clusGap(USArrests, FUN = hcut, nstart=25, K.max=20, B=50)
+fviz_gap_stat(gap_stat)
+```
+
+Here it seems like there is a large jump in gap from 5 to 6, so I will choose 5 as the optimal number of clusters. Linkage method is complete.
+
+```{r hclust}
+diss.matrix <- dist(USArrests, method = "euclidean")
+clusters.h <- hclust(diss.matrix, method = "complete")
+plot(clusters.h)
+```
+
+```{r identify_cluster_components}
+cluster.components <- cutree(clusters.h, k=5)
+```
+
+```{r show_clusters, echo=FALSE}
+print("Cluster 1:")
+names(cluster.components[cluster.components == 1])
+print("Cluster 2:")
+names(cluster.components[cluster.components == 2])
+print("Cluster 3:")
+names(cluster.components[cluster.components == 3])
+print("Cluster 4:")
+names(cluster.components[cluster.components == 4])
+print("Cluster 5:")
+names(cluster.components[cluster.components == 5])
+```
+
+I am interested in the descriptive question: "What is the average socioeconomic status of each cluster?" Here, we have to be careful ethically since socioeconomic status may not be unequally (or perhaps, inequitably) distributed between clusters. When we make a conclusion about the socioeconomic status at the cluster level, we might be unintentionally masking or diluting the true socioeconomic status of each state. Nevertheless, I find this question interesting but we must still take into account metrics other than average as well to get a better picture.

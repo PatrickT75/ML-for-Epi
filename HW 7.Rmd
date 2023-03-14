@@ -1,0 +1,89 @@
+---
+title: "HW-7"
+output: html_document
+date: "2023-02-28"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(caret)
+library(dplyr)
+library(rpart)
+library(rpart.plot)
+```
+
+__Prepare Data__
+```{r prepare_data}
+df <- read.csv("mi.data.csv")
+df <- df[,2:ncol(df)]
+
+df_2 <- df
+cols <- c("Pulm.adema", "FC", "Arr", "Diab", "Obesity", "Asthma", "readmission")
+df_2[cols] <- lapply(df_2[cols], as.factor)
+
+head(df_2)
+```
+
+```{r split_data}
+train.indices<-createDataPartition(y=df_2$readmission,p=0.7,list=FALSE)
+train.data<-df_2[train.indices, ]
+test.data<-df_2[-train.indices, ]
+
+train.data_gb <- df[train.indices,]
+test.data_gb <- df[-train.indices,]
+```
+
+__Tree__
+```{r tree}
+set.seed(123)
+# smaller cross validation due to very small proportion of readmitted
+train.control<-trainControl(method="cv", number=5, summaryFunction=twoClassSummary)
+
+tree.grid<-expand.grid(cp=seq(0.0001, 0.0003, by=0.0002))
+
+tree.model <-train(readmission~., data=train.data, method="rpart",trControl=train.control, tuneGrid=tree.grid, metric="Sens")
+
+tree.model$bestTune
+rpart.plot(tree.model$finalModel)
+plot(varImp(tree.model))
+print(paste("Accuracy of Best Tune: ", max(tree.model$results[['Accuracy']])))
+```
+The accuracy of prediction for the training set using a tree is 0.888, using an optimal Cp of 3e-04. This data set was interesting because there were so many no's that the best prediction would almost always be classifying as 'no' (1 leaf only). However, by restricting it to a smaller range, I could get some information that WBC and age are the most important variables. I also chose not to upsample because upsampling gives me a very complicated tree with too many splits.
+
+__Random Forest__
+```{r random_forest}
+mtry.grid<-expand.grid(.mtry=seq(sqrt(ncol(train.data)-1),ncol(train.data)-1, by=1))
+
+rf.model<-train(readmission~., data=df_2, method="rf", metric="Accuracy", tuneGrid=mtry.grid, trControl=train.control, ntree=200)
+
+rf.model$bestTune
+plot(varImp(rf.model))
+print(paste("Accuracy of Best Tune: ", max(rf.model$results[['Accuracy']])))
+```
+Here the optimal mtry = 4.74. Looking at the variable importance, it looks like age and WBC are again the most important ones. The accuracy of prediction for the training set using a random forest is 0.906. 
+
+__Gradient Boost__
+```{r gradient_boost}
+library(gbm)
+gbm.model<-gbm(readmission ~., data=df, distribution='bernoulli', n.trees=100, shrinkage=0.001)
+best.iter<-gbm.perf(gbm.model, plot.it=TRUE, oobag.curve=TRUE,overlay=TRUE, method='OOB')
+print(best.iter)
+summary(gbm.model)
+
+pred.gbm.model<-predict(gbm.model, train.data_gb, n.trees=best.iter, type="response")
+pred.gbm.class<-round(pred.gbm.model)
+gb_accuracy <- 1-mean(pred.gbm.class != train.data$readmission)
+print(gb_accuracy)
+```
+Here I used 100 trees and a shrinkage of 0.001. The variable importance showed that WBC was the most important factor, followed by FC. I used these parameters to train the model which resulted in an accuracy of 0.906.
+
+__Final Model__
+
+Overall, the best model was almost the same between the tree and gradient boost model. I chose to use the gradient boost model since I hoped it would perform better on new data.
+```{r testing_set}
+final.pred<-predict(gbm.model, test.data_gb, n.trees=best.iter, type="response")
+final.class<-round(final.pred)
+final_accuracy <- 1-mean(final.class != test.data$readmission)
+print(final_accuracy)
+```
+The final accuracy using the gradient boost model is 0.908. 
